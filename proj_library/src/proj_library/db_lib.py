@@ -42,6 +42,32 @@ def createTables():
     """)
     return
 
+def createProcedures():
+    conn_info.execute("""
+        CREATE OR REPLACE PROCEDURE check_attendance(
+            IN p_event_id BIGINT,
+            OUT event_name VARCHAR(255),
+            OUT capacity INTEGER,
+            OUT registered_count BIGINT
+        )
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            SELECT e.event_name, e.capacity, COUNT(DISTINCT r.user_id)
+            INTO event_name, capacity, registered_count
+            FROM events AS e
+            LEFT JOIN registration AS r ON r.event_id = e.event_id
+            WHERE e.event_id = p_event_id
+            GROUP BY e.event_id, e.event_name, e.capacity;
+
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Event ID % does not exist', p_event_id;
+            END IF;
+        END;
+        $$;
+    """)
+    return
+
 def insertEvents():
     conn_info.execute("""
         INSERT INTO events(event_name, campus, capacity, date) VALUES

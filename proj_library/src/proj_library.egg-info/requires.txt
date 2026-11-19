@@ -1,0 +1,7 @@
+psycopg[binary]>=3.2
+redis>=7
+requests>=2.32
+pandas>=2.3
+pytz>=2026.4
+pyarrow>=21
+python-dotenv
