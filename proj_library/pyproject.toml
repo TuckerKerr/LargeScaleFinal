@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "proj_library"
+version = "0.1.0"
+description = "All Libraries that will help this program"
+requires-python = ">=3.10"
+dependencies = [
+    "psycopg[binary]>=3.2",
+    "redis>=7",
+    "requests>=2.32",
+    "pandas>=2.3",
+    "pytz>=2026.4",
+    "pyarrow>=21",
+]
