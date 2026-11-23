@@ -3,6 +3,8 @@ load_dotenv()  # reads .env and adds those pairs to os.environ
 
 import os
 import psycopg
+from psycopg.rows import dict_row
+
 
 conn_info = psycopg.connect(
     host=os.environ["PGHOST"],
@@ -22,32 +24,33 @@ def commitQueries():
 
 def createTables():
     conn_info.execute("""
-        CREATE TABLE IF NOT EXIST events (
-            event_id INT BIGSERIAL PRIMARY KEY,
+        CREATE TABLE IF NOT EXISTS events (
+            event_id BIGSERIAL PRIMARY KEY,
             event_name VARCHAR(255) NOT NULL,
             campus VARCHAR(255) NOT NULL,
             capacity INT NOT NULL,
             date TIMESTAMPTZ
         );
 
-        CREATE TABLE IF NOT EXIST users (
-            user_id INT BIGSERIAL PRIMARY KEY,
-            name VARCHAR(255) NOT NULL,
+        CREATE TABLE IF NOT EXISTS users (
+            user_id BIGSERIAL PRIMARY KEY,
+            name VARCHAR(255) NOT NULL UNIQUE
         );
 
-        CREATE TABLE IF NOT EXIST registration(
+        CREATE TABLE IF NOT EXISTS registration(
             event_id INT REFERENCES events(event_id),
-            username VARCHAR(255) REFERENCES users(name),
+            username VARCHAR(255) REFERENCES users(name)
         );
     """)
     return
 
 def createProcedures():
     conn_info.execute("""
-        CREATE OR REPLACE FUNCTION check_attendance()
+        CREATE FUNCTION check_attendance()
             RETURNS TABLE (
-                event_id INTEGER,
+                event_id BIGINT,
                 event_name VARCHAR(255),
+                campus VARCHAR(255),
                 capacity INTEGER,
                 registered_count BIGINT
             )
@@ -58,6 +61,7 @@ def createProcedures():
                 SELECT
                     e.event_id,
                     e.event_name,
+                    e.campus,
                     e.capacity,
                     COUNT(DISTINCT r.username)
                 FROM events AS e
@@ -66,7 +70,9 @@ def createProcedures():
                 GROUP BY
                     e.event_id,
                     e.event_name,
-                    e.capacity;
+                    e.campus,
+                    e.capacity
+                ORDER BY e.event_id;
             END;
             $$;
 
@@ -188,7 +194,11 @@ def reserveEvent(username, event):
             return "Registration successful"
 
 def getEvents():
-    conn_info.execute("""
-        SELECT * FROM check_attendance()
-    """)
-    return
+    with conn_info.cursor(row_factory=dict_row) as cursor:
+        cursor.execute("SELECT * FROM check_attendance()")
+        return cursor.fetchall()
+
+def getSingleEvent(event):
+    with conn_info.cursor(row_factory=dict_row) as cursor:
+        cursor.execute("CALL check_event_attendance(%s, NULL, NULL, NULL)", (event,))
+        return cursor.fetchone()

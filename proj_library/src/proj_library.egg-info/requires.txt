@@ -5,3 +5,6 @@ pandas>=2.3
 pytz>=2026.4
 pyarrow>=21
 python-dotenv
+flask
+pytest
+hypothesis

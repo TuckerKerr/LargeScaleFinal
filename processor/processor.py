@@ -5,16 +5,26 @@ load_dotenv()  # reads .env and adds those pairs to os.environ
 
 r = redis.Redis(host='localhost', port=6379, decode_responses=True)
 
-def insertData(stream):
+def insertData():
     last_id = "0-0"
-    results = r.xread(streams={"events:raw", last_id}, count=10, block=10000,)
+    while True:
+        results = r.xread(streams={"events:raw": last_id}, count=10, block=10000,)
 
-    for stream, events in results:
-        for event_id, user in events:
+        for stream_name, events in results:
+            for event_id, user in events:
+                username = user["username"]
+                event = user["event"]
+                try:
+                    registration = lib.reserveEvent(username, event)
 
-            registration = lib.reserveEvent(user["username"], user["event"])
-            if registration == "Event at capacity":
-                return registration
-            
-            last_id = event_id
+                    if registration == "Event at capacity":
+                        print(f"User: {username} cant register for {event} due to capacity")
+
+                    last_id = event_id
+                except Exception as error:
+                    print(f"Error processing {event_id}: {error}")
+                    raise
     return last_id, True
+
+if __name__ == "__main__":
+    insertData()

@@ -1,231 +1,484 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-
-<head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>Campus Fan Fest</title>
-  <style>
-    :root {
-      font-family: system-ui, -apple-system, Segoe UI, sans-serif;
-      color: #182337;
-      background: #f5f7fb;
-    }
-
-    * {
-      box-sizing: border-box;
-    }
-
-    body {
-      margin: 0;
-    }
-
-    header {
-      background: #172b50;
-      color: white;
-      padding: 30px max(24px, calc((100vw - 1050px)/2));
-    }
-
-    header h1 {
-      margin: 0 0 6px;
-      font-size: 2rem;
-    }
-
-    header p {
-      margin: 0;
-      opacity: .85;
-    }
-
-    main {
-      max-width: 1050px;
-      margin: 32px auto;
-      padding: 0 24px;
-    }
-
-    #events {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(275px, 1fr));
-      gap: 18px;
-    }
-
-    .event {
-      background: white;
-      border: 1px solid #e2e7f0;
-      border-radius: 14px;
-      padding: 22px;
-      box-shadow: 0 5px 18px #192c4d0b;
-    }
-
-    .event h2 {
-      font-size: 1.15rem;
-      line-height: 1.35;
-      margin: 0 0 10px;
-    }
-
-    .campus {
-      color: #62718a;
-      font-size: .9rem;
-      margin-bottom: 24px;
-    }
-
-    .counts {
-      display: flex;
-      justify-content: space-between;
-      font-size: .9rem;
-      margin-bottom: 9px;
-    }
-
-    .counts strong {
-      font-weight: 700;
-    }
-
-    .track {
-      width: 100%;
-      height: 12px;
-      background: #e8edf5;
-      border-radius: 999px;
-      overflow: hidden;
-      margin-bottom: 21px;
-    }
-
-    .fill {
-      height: 100%;
-      width: 0;
-      background: #386bd6;
-      border-radius: inherit;
-      transition: width .3s ease;
-    }
-
-    button {
-      width: 100%;
-      border: 0;
-      border-radius: 9px;
-      padding: 12px;
-      background: #2859c7;
-      color: white;
-      font: inherit;
-      font-weight: 650;
-      cursor: pointer;
-    }
-
-    button:hover:not(:disabled) {
-      background: #1c469f;
-    }
-
-    button:disabled {
-      background: #a7b1c3;
-      cursor: not-allowed;
-    }
-
-    .notice {
-      min-height: 22px;
-      font-size: .85rem;
-      margin-top: 12px;
-      color: #475569;
-    }
-
-    #page-status {
-      margin: 0 0 18px;
-      color: #62718a;
-    }
-  </style>
-</head>
-
-<body>
-  <header>
-    <h1>Campus Fan Fest</h1>
-    <p>Explore events and reserve your seat.</p>
-  </header>
-  <main>
-    <p id="page-status" role="status">Loading events…</p>
-    <section id="events" aria-label="Campus events"></section>
-  </main>
-  <script>
-    // Expected GET /api/events response:
-    // [{ "id": "evt-49ers", "name": "San Francisco 49ers Fan Watch Party",
-    //    "campus": "North Campus", "capacity": 49, "reserved": 12 }]
-    // POST /api/reservations body: { "eventId": "evt-49ers" }
-    // The server must identify the attendee and enforce capacity/duplicate checks.
-    const API_BASE = ''; // Set to e.g. 'http://localhost:3000' if hosted separately.
-    const eventsElement = document.getElementById('events');
-    const pageStatus = document.getElementById('page-status');
-
-    function createEventCard(event) {
-      const id = String(event.id);
-      const capacity = Math.max(0, Number(event.capacity) || 0);
-      const reserved = Math.max(0, Number(event.reserved) || 0);
-      const percent = capacity ? Math.min(100, (reserved / capacity) * 100) : 0;
-      const card = document.createElement('article');
-      card.className = 'event';
-      const title = document.createElement('h2');
-      title.textContent = event.name ?? 'Untitled event';
-      const campus = document.createElement('div');
-      campus.className = 'campus';
-      campus.textContent = event.campus ?? '';
-      const counts = document.createElement('div');
-      counts.className = 'counts';
-      const going = document.createElement('strong');
-      going.textContent = `${reserved} going`;
-      const total = document.createElement('span');
-      total.textContent = `${capacity} seats`;
-      counts.append(going, total);
-      const track = document.createElement('div');
-      track.className = 'track';
-      track.setAttribute('role', 'progressbar');
-      track.setAttribute('aria-label', 'Seats reserved');
-      track.setAttribute('aria-valuemin', '0');
-      track.setAttribute('aria-valuemax', String(capacity));
-      track.setAttribute('aria-valuenow', String(Math.min(reserved, capacity)));
-      const fill = document.createElement('div');
-      fill.className = 'fill';
-      fill.style.width = `${percent}%`;
-      track.append(fill);
-      const button = document.createElement('button');
-      button.type = 'button';
-      button.textContent = reserved >= capacity ? 'Event Full' : 'Register';
-      button.disabled = reserved >= capacity;
-      const notice = document.createElement('div');
-      notice.className = 'notice';
-      notice.setAttribute('role', 'status');
-      button.addEventListener('click', async () => {
-        button.disabled = true;
-        button.textContent = 'Submitting…';
-        notice.textContent = '';
-        try {
-          const response = await fetch(`${API_BASE}/api/reservations`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            credentials: 'include', body: JSON.stringify({ eventId: id })
-          });
-          const result = await response.json().catch(() => ({}));
-          if (!response.ok) throw new Error(result.message || result.error || 'Request failed');
-          notice.textContent = result.status === 'confirmed' ? 'Reservation confirmed.' : 'Request received. Reservation pending.';
-          // Do not increase attendance here: only the backend can confirm seats.
-          await loadEvents();
-        } catch (error) {
-          notice.textContent = error.message || 'Could not submit request.';
-          button.disabled = false;
-          button.textContent = 'Register';
-        }
-      });
-      card.append(title, campus, counts, track, button, notice);
-      return card;
-    }
-
-    async function loadEvents() {
-      try {
-        const response = await fetch(`${API_BASE}/api/events`, { credentials: 'include' });
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        const data = await response.json();
-        const events = Array.isArray(data) ? data : data.events;
-        if (!Array.isArray(events)) throw new Error('Expected an events array');
-        eventsElement.replaceChildren(...events.map(createEventCard));
-        pageStatus.textContent = events.length ? '' : 'No events available.';
-      } catch (error) {
-        pageStatus.textContent = `Unable to load events: ${error.message}`;
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#172b50" />
+    <title>Campus Fan Fest</title>
+    <style>
+      :root {
+        font-family:
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          sans-serif;
+        color: #182337;
+        background: #f5f7fb;
+        font-synthesis: none;
       }
-    }
-    loadEvents();
-  </script>
-</body>
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      button,
+      input {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      header {
+        background: linear-gradient(125deg, #172b50, #254d8b);
+        color: white;
+        padding: clamp(26px, 5vw, 52px) max(18px, calc((100vw - 1100px) / 2));
+      }
+      header h1 {
+        margin: 0 0 8px;
+        font-size: clamp(1.7rem, 4vw, 2.6rem);
+      }
+      header p {
+        margin: 0;
+        color: #dce6f5;
+      }
+      main {
+        max-width: 1100px;
+        margin: 0 auto;
+        padding: clamp(18px, 3vw, 32px);
+      }
+      .toolbar {
+        display: grid;
+        grid-template-columns: minmax(200px, 1fr) auto;
+        gap: 18px;
+        align-items: end;
+        margin-bottom: 18px;
+      }
+      .identity,
+      .filter-group {
+        display: flex;
+        flex-direction: column;
+        gap: 8px;
+      }
+      label,
+      .filter-label {
+        font-size: 0.9rem;
+        font-weight: 700;
+      }
+      input {
+        width: 100%;
+        min-height: 46px;
+        border: 1px solid #cbd5e1;
+        border-radius: 10px;
+        padding: 11px 13px;
+        background: white;
+        color: #182337;
+      }
+      .filters {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+      .filter-button {
+        border: 1px solid #ccd7e8;
+        border-radius: 999px;
+        background: #fff;
+        color: #294466;
+        padding: 11px 16px;
+        min-height: 44px;
+        font-weight: 650;
+        white-space: nowrap;
+      }
+      .filter-button[aria-pressed="true"] {
+        background: #2859c7;
+        border-color: #2859c7;
+        color: white;
+      }
+      .filter-button:hover:not([aria-pressed="true"]) {
+        background: #e9effa;
+      }
+      .controls {
+        display: flex;
+        justify-content: space-between;
+        align-items: end;
+        gap: 12px;
+        flex-wrap: wrap;
+        margin-bottom: 20px;
+      }
+      .primary {
+        border: 0;
+        border-radius: 10px;
+        padding: 12px 17px;
+        background: #2859c7;
+        color: white;
+        font-weight: 700;
+        min-height: 46px;
+      }
+      .primary:hover:not(:disabled) {
+        background: #1c469f;
+      }
+      button:disabled {
+        opacity: 0.58;
+        cursor: not-allowed;
+      }
+      :is(input, button):focus-visible {
+        outline: 3px solid #8db5ff;
+        outline-offset: 3px;
+      }
+      #page-status {
+        color: #53647c;
+        margin: 0;
+        min-height: 24px;
+        font-size: 0.94rem;
+      }
+      #events {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+        gap: 18px;
+      }
+      .event {
+        display: flex;
+        flex-direction: column;
+        background: white;
+        border: 1px solid #e2e7f0;
+        border-radius: 16px;
+        padding: 22px;
+        box-shadow: 0 5px 18px #192c4d0b;
+        min-width: 0;
+      }
+      .event h2 {
+        font-size: 1.16rem;
+        line-height: 1.35;
+        margin: 0 0 12px;
+      }
+      .campus {
+        color: #5a6b84;
+        font-size: 0.9rem;
+        margin-bottom: 22px;
+      }
+      .counts {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+        font-size: 0.9rem;
+        margin-bottom: 10px;
+      }
+      .track {
+        height: 12px;
+        background: #e8edf5;
+        border-radius: 999px;
+        overflow: hidden;
+        margin-bottom: 22px;
+      }
+      .fill {
+        height: 100%;
+        background: #386bd6;
+        border-radius: inherit;
+        transition: width 0.3s ease;
+      }
+      .fill.full {
+        background: #b74848;
+      }
+      .card-bottom {
+        margin-top: auto;
+      }
+      .event .primary {
+        width: 100%;
+      }
+      .notice {
+        min-height: 22px;
+        margin-top: 12px;
+        color: #475569;
+        font-size: 0.85rem;
+        overflow-wrap: anywhere;
+      }
+      .notice.error {
+        color: #a02020;
+      }
+      .notice.success {
+        color: #17613e;
+      }
+      .empty {
+        grid-column: 1/-1;
+        background: white;
+        border: 1px dashed #cbd5e1;
+        border-radius: 14px;
+        padding: 30px;
+        text-align: center;
+        color: #53647c;
+      }
+      @media (max-width: 680px) {
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+        .controls {
+          align-items: stretch;
+        }
+        .controls .primary {
+          width: 100%;
+        }
+        .filters {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 7px;
+        }
+        .filter-button {
+          padding: 10px 6px;
+          font-size: 0.81rem;
+          white-space: normal;
+        }
+        .event {
+          padding: 19px;
+        }
+        #events {
+          grid-template-columns: 1fr;
+          gap: 14px;
+        }
+      }
+      @media (min-width: 681px) and (max-width: 880px) {
+        .toolbar {
+          grid-template-columns: 1fr;
+        }
+        .controls {
+          align-items: center;
+        }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .fill {
+          transition: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Campus Fan Fest</h1>
+      <p>Discover campus events and reserve your seat.</p>
+    </header>
+    <main>
+      <div class="toolbar">
+        <div class="filter-group">
+          <span class="filter-label" id="campus-filter-label"
+            >Filter by campus</span
+          >
+          <div
+            class="filters"
+            role="group"
+            aria-labelledby="campus-filter-label"
+          >
+            <button
+              class="filter-button"
+              type="button"
+              data-campus="all"
+              aria-pressed="true"
+            >
+              All Campuses
+            </button>
+            <button
+              class="filter-button"
+              type="button"
+              data-campus="North Campus"
+              aria-pressed="false"
+            >
+              North Campus
+            </button>
+            <button
+              class="filter-button"
+              type="button"
+              data-campus="South Campus"
+              aria-pressed="false"
+            >
+              South Campus
+            </button>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <p id="page-status" role="status">Loading events…</p>
+        <button id="refresh" class="primary" type="button">
+          Refresh events
+        </button>
+      </div>
+      <section id="events" aria-label="Campus events"></section>
+    </main>
+    <script>
+      // Use an empty API_BASE when Flask serves this page from the same origin.
+      // If served separately, set this to the Flask origin and configure CORS on Flask.
+      const API_BASE = "";
+      const eventsElement = document.getElementById("events");
+      const pageStatus = document.getElementById("page-status");
+      const usernameInput = document.getElementById("username");
+      const refreshButton = document.getElementById("refresh");
+      const campusButtons = document.querySelectorAll(".filter-button");
+      const pendingRequests = new Map();
+      let allEvents = [];
+      let selectedCampus = "all";
 
+      function renderEvents() {
+        const filtered =
+          selectedCampus === "all"
+            ? allEvents
+            : allEvents.filter(
+                (event) =>
+                  String(event.campus ?? "")
+                    .trim()
+                    .toLowerCase() === selectedCampus.toLowerCase(),
+              );
+        eventsElement.replaceChildren();
+        if (!filtered.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = allEvents.length
+            ? "No events available for this campus."
+            : "No events available.";
+          eventsElement.append(empty);
+        } else {
+          eventsElement.append(...filtered.map(createEventCard));
+        }
+        pageStatus.textContent = `${filtered.length} event${filtered.length === 1 ? "" : "s"} shown`;
+      }
+
+      campusButtons.forEach((button) =>
+        button.addEventListener("click", () => {
+          selectedCampus = button.dataset.campus;
+          campusButtons.forEach((other) =>
+            other.setAttribute("aria-pressed", String(other === button)),
+          );
+          renderEvents();
+        }),
+      );
+
+      function createEventCard(event) {
+        const id = event.id ?? event.event_id;
+        const capacity = Math.max(0, Number(event.capacity) || 0);
+        const reserved = Math.max(
+          0,
+          Number(event.reserved ?? event.registered_count) || 0,
+        );
+        const full = reserved >= capacity;
+        const percent = capacity
+          ? Math.min(100, (reserved / capacity) * 100)
+          : 0;
+        const pending = pendingRequests.has(String(id));
+        const card = document.createElement("article");
+        card.className = "event";
+        const title = document.createElement("h2");
+        title.textContent = event.name ?? event.event_name ?? "Untitled event";
+        const campus = document.createElement("div");
+        campus.className = "campus";
+        campus.textContent = event.campus ?? "Campus not specified";
+        const counts = document.createElement("div");
+        counts.className = "counts";
+        const going = document.createElement("strong");
+        going.textContent = `${reserved} going`;
+        const total = document.createElement("span");
+        total.textContent = `${capacity} seats`;
+        counts.append(going, total);
+        const track = document.createElement("div");
+        track.className = "track";
+        track.setAttribute("role", "progressbar");
+        track.setAttribute("aria-label", "Seats reserved");
+        track.setAttribute("aria-valuemin", "0");
+        track.setAttribute("aria-valuemax", String(capacity));
+        track.setAttribute(
+          "aria-valuenow",
+          String(Math.min(reserved, capacity)),
+        );
+        const fill = document.createElement("div");
+        fill.className = "fill" + (full ? " full" : "");
+        fill.style.width = `${percent}%`;
+        track.append(fill);
+        const bottom = document.createElement("div");
+        bottom.className = "card-bottom";
+        const button = document.createElement("button");
+        button.className = "primary";
+        button.type = "button";
+        button.textContent = full
+          ? "Event Full"
+          : pending
+            ? "Request Pending"
+            : "Register";
+        button.disabled = full || pending || id == null;
+        const notice = document.createElement("div");
+        notice.className = "notice";
+        notice.setAttribute("role", "status");
+        if (pending)
+          notice.textContent = "Request queued. Seat not yet confirmed.";
+        button.addEventListener("click", async () => {
+          const username = usernameInput.value.trim();
+          if (!username) {
+            notice.className = "notice error";
+            notice.textContent = "Enter your student name before registering.";
+            usernameInput.focus();
+            return;
+          }
+          button.disabled = true;
+          button.textContent = "Submitting…";
+          notice.className = "notice";
+          notice.textContent = "";
+          try {
+            const response = await fetch(`${API_BASE}/api/reservations`, {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              credentials: "include",
+              body: JSON.stringify({ username: "Avery Brooks", eventId: id }),
+            });
+            const result = await response.json().catch(() => ({}));
+            if (
+              !response.ok ||
+              result.status === "duplicate" ||
+              result === "Duplicate"
+            )
+              throw new Error(
+                result.message ||
+                  result.error ||
+                  (result.status === "duplicate"
+                    ? "Registration already submitted."
+                    : `HTTP ${response.status}`),
+              );
+            if (result.status === "confirmed") {
+              notice.className = "notice success";
+              notice.textContent = "Registration confirmed.";
+              await loadEvents();
+            } else {
+              pendingRequests.set(String(id), result.requestId ?? "queued");
+              button.textContent = "Request Pending";
+              notice.textContent = "Request queued. Seat not yet confirmed.";
+            }
+          } catch (error) {
+            notice.className = "notice error";
+            notice.textContent = error.message || "Could not submit request.";
+            button.disabled = false;
+            button.textContent = "Register";
+          }
+        });
+        bottom.append(button, notice);
+        card.append(title, campus, counts, track, bottom);
+        return card;
+      }
+
+      async function loadEvents() {
+        refreshButton.disabled = true;
+        pageStatus.textContent = "Loading events…";
+        try {
+          const response = await fetch(`${API_BASE}/api/events`, {
+            credentials: "include",
+          });
+          if (!response.ok) throw new Error(`HTTP ${response.status}`);
+          const data = await response.json();
+          const events = Array.isArray(data) ? data : data.events;
+          if (!Array.isArray(events))
+            throw new Error("Expected an events array");
+          allEvents = events;
+          renderEvents();
+        } catch (error) {
+          pageStatus.textContent = `Unable to load events: ${error.message}`;
+        } finally {
+          refreshButton.disabled = false;
+        }
+      }
+      refreshButton.addEventListener("click", loadEvents);
+      loadEvents();
+    </script>
+  </body>
 </html>
