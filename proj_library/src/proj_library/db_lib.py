@@ -40,9 +40,6 @@ def createTables():
             username VARCHAR(255) REFERENCES users(name),
         );
     """)
-
-    
-    commitQueries()
     return
 
 def createProcedures():
@@ -128,8 +125,6 @@ def createProcedures():
         END;
         $$;
     """)
-
-    commitQueries()
     return
 
 def insertEvents():
@@ -140,8 +135,6 @@ def insertEvents():
             ('WWE History Night: Ric Flair Career Discussion', 'North Campus', 16, '2026-12-11 18:00:00-05:00');
 
     """)
-
-    commitQueries()
     return
 
 def insertUsers():
@@ -168,8 +161,6 @@ def insertUsers():
             ('Blair Chen'),
             ('Rowan Mitchell');    
     """)
-
-    commitQueries()
     return
 
 def reserveEvent(username, event):
