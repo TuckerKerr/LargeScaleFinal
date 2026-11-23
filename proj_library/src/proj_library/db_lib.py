@@ -37,15 +37,44 @@ def createTables():
 
         CREATE TABLE IF NOT EXIST registration(
             event_id INT REFERENCES events(event_id),
-            user_id INT REFERENCES users(user_id),
+            username VARCHAR(255) REFERENCES users(name),
         );
     """)
+
+    
+    commitQueries()
     return
 
 def createProcedures():
     conn_info.execute("""
-        CREATE OR REPLACE PROCEDURE check_attendance(
-            IN p_event_id BIGINT,
+        CREATE OR REPLACE FUNCTION check_attendance()
+            RETURNS TABLE (
+                event_id INTEGER,
+                event_name VARCHAR(255),
+                capacity INTEGER,
+                registered_count BIGINT
+            )
+            LANGUAGE plpgsql
+            AS $$
+            BEGIN
+                RETURN QUERY
+                SELECT
+                    e.event_id,
+                    e.event_name,
+                    e.capacity,
+                    COUNT(DISTINCT r.username)
+                FROM events AS e
+                LEFT JOIN registration AS r
+                    ON r.event_id = e.event_id
+                GROUP BY
+                    e.event_id,
+                    e.event_name,
+                    e.capacity;
+            END;
+            $$;
+
+        CREATE OR REPLACE PROCEDURE check_event_attendance(
+            IN p_event_id INTEGER,
             OUT event_name VARCHAR(255),
             OUT capacity INTEGER,
             OUT registered_count BIGINT
@@ -53,10 +82,17 @@ def createProcedures():
         LANGUAGE plpgsql
         AS $$
         BEGIN
-            SELECT e.event_name, e.capacity, COUNT(DISTINCT r.user_id)
-            INTO event_name, capacity, registered_count
+            SELECT
+                e.event_name,
+                e.capacity,
+                COUNT(DISTINCT r.username)
+            INTO
+                event_name,
+                capacity,
+                registered_count
             FROM events AS e
-            LEFT JOIN registration AS r ON r.event_id = e.event_id
+            LEFT JOIN registration AS r
+                ON r.event_id = e.event_id
             WHERE e.event_id = p_event_id
             GROUP BY e.event_id, e.event_name, e.capacity;
 
@@ -65,7 +101,35 @@ def createProcedures():
             END IF;
         END;
         $$;
+
+        CREATE OR REPLACE PROCEDURE save_registration(
+            p_event_id INT,
+            p_username VARCHAR
+        )
+        LANGUAGE plpgsql
+        AS $$
+        BEGIN
+            IF EXISTS (
+                SELECT 1
+                FROM registration
+                WHERE event_id = p_event_id AND username = p_username
+            ) THEN
+                RAISE EXCEPTION 'User % is already registered for event %',
+                p_username, p_event_id;
+            ELSE
+                INSERT INTO registration (
+                    event_id, 
+                    username
+                ) VALUES (
+                    p_event_id,
+                    p_username 
+                );
+            END IF;
+        END;
+        $$;
     """)
+
+    commitQueries()
     return
 
 def insertEvents():
@@ -76,6 +140,8 @@ def insertEvents():
             ('WWE History Night: Ric Flair Career Discussion', 'North Campus', 16, '2026-12-11 18:00:00-05:00');
 
     """)
+
+    commitQueries()
     return
 
 def insertUsers():
@@ -102,5 +168,36 @@ def insertUsers():
             ('Blair Chen'),
             ('Rowan Mitchell');    
     """)
+
+    commitQueries()
     return
 
+def reserveEvent(username, event):
+    with conn_info.cursor() as cursor:
+
+        cursor.execute("""
+            CALL check_event_attendance(
+                %s, NULL, NULL, NULL
+            )
+        """, (event,))
+
+        event_attendance = cursor.fetchone()
+
+        event_name = event_attendance[0]
+        capacity = event_attendance[1]
+        registered_count = event_attendance[2]
+
+        if registered_count >= capacity:
+            return "Event at capacity"
+        else:
+            cursor.execute("""
+                CALL save_registration(%s, %s)
+            """, (event, username))
+            commitQueries()
+            return "Registration successful"
+
+def getEvents():
+    conn_info.execute("""
+        SELECT * FROM check_attendance()
+    """)
+    return
