@@ -21,6 +21,7 @@ def commitQueries():
         conn_info.rollback()
         raise
     return
+    
 
 def createTables():
     conn_info.execute("""
@@ -38,15 +39,21 @@ def createTables():
         );
 
         CREATE TABLE IF NOT EXISTS registration(
+            request_id BIGSERIAL PRIMARY KEY,
             event_id INT REFERENCES events(event_id),
-            username VARCHAR(255) REFERENCES users(name)
+            username VARCHAR(255) REFERENCES users(name),
+            requested_at TIMESTAMPTZ,
+            status TEXT NOT NULL CHECK (status IN ('pending', 'confirmed', 'rejected')),
+            rejection_reason TEXT,
+            redis_message_id TEXT UNIQUE,
+            CHECK ((status = 'rejected') = (rejection_reason IS NOT NULL))
         );
     """)
     return
 
 def createProcedures():
     conn_info.execute("""
-        CREATE FUNCTION check_attendance()
+        CREATE OR REPLACE FUNCTION check_attendance()
             RETURNS TABLE (
                 event_id BIGINT,
                 event_name VARCHAR(255),
@@ -67,6 +74,7 @@ def createProcedures():
                 FROM events AS e
                 LEFT JOIN registration AS r
                     ON r.event_id = e.event_id
+                    AND r.status = 'confirmed'
                 GROUP BY
                     e.event_id,
                     e.event_name,
@@ -96,6 +104,7 @@ def createProcedures():
             FROM events AS e
             LEFT JOIN registration AS r
                 ON r.event_id = e.event_id
+                AND r.status = 'confirmed'
             WHERE e.event_id = p_event_id
             GROUP BY e.event_id, e.event_name, e.capacity;
 
@@ -107,27 +116,22 @@ def createProcedures():
 
         CREATE OR REPLACE PROCEDURE save_registration(
             p_event_id INT,
-            p_username VARCHAR
+            p_username VARCHAR,
+            p_requested_at TIMESTAMPTZ,
+            p_status TEXT,
+            p_rejection_reason TEXT,
+            p_redis_message_id TEXT
         )
         LANGUAGE plpgsql
         AS $$
         BEGIN
-            IF EXISTS (
-                SELECT 1
-                FROM registration
-                WHERE event_id = p_event_id AND username = p_username
-            ) THEN
-                RAISE EXCEPTION 'User % is already registered for event %',
-                p_username, p_event_id;
-            ELSE
-                INSERT INTO registration (
-                    event_id, 
-                    username
-                ) VALUES (
-                    p_event_id,
-                    p_username 
-                );
-            END IF;
+            INSERT INTO registration (
+                event_id, username, requested_at, status,
+                rejection_reason, redis_message_id
+            ) VALUES (
+                p_event_id, p_username, p_requested_at, p_status,
+                p_rejection_reason, p_redis_message_id
+            );
         END;
         $$;
     """)
@@ -169,29 +173,59 @@ def insertUsers():
     """)
     return
 
-def reserveEvent(username, event):
+def reserveEvent(username, event, requested_at=None, message_id=None):
     with conn_info.cursor() as cursor:
 
         cursor.execute("""
-            CALL check_event_attendance(
-                %s, NULL, NULL, NULL
-            )
+            SELECT event_id FROM events WHERE event_id = %s FOR UPDATE
         """, (event,))
+        if cursor.fetchone() is None:
+            raise ValueError(f"Event {event} does not exist")
 
-        event_attendance = cursor.fetchone()
+        if message_id is not None:
+            cursor.execute(
+                """
+                SELECT status, rejection_reason
+                FROM registration
+                WHERE redis_message_id = %s
+                """,
+                (message_id,),
+            )
+            existing = cursor.fetchone()
+            if existing is not None:
+                return {
+                    "status": existing[0],
+                    "rejection_reason": existing[1],
+                }
+        cursor.execute("CALL check_event_attendance(%s, NULL, NULL, NULL)", (event,),)
+        __, capacity, registered_count = cursor.fetchone()
 
-        event_name = event_attendance[0]
-        capacity = event_attendance[1]
-        registered_count = event_attendance[2]
+        cursor.execute(
+            """
+            SELECT EXISTS (
+                SELECT 1
+                FROM registration
+                WHERE event_id = %s
+                  AND username = %s
+                  AND status = 'confirmed'
+            )
+            """,
+            (event, username),
+        )
+        registered = cursor.fetchone()[0]
+        rejection_reason = None
+        if registered:
+            rejection_reason = "already_reserved"
+        elif registered_count >= capacity:
+            rejection_reason = "event_full"
+        
+        status = "rejected" if rejection_reason else "confirmed"
 
-        if registered_count >= capacity:
-            return "Event at capacity"
-        else:
-            cursor.execute("""
-                CALL save_registration(%s, %s)
-            """, (event, username))
-            commitQueries()
-            return "Registration successful"
+        cursor.execute("""
+            CALL save_registration(%s, %s, %s, %s, %s, %s)
+        """, (event, username, requested_at, status, rejection_reason, message_id))
+        commitQueries()
+        return {"status": status, "rejection_reason": rejection_reason}
 
 def getEvents():
     with conn_info.cursor(row_factory=dict_row) as cursor:
@@ -201,4 +235,15 @@ def getEvents():
 def getSingleEvent(event):
     with conn_info.cursor(row_factory=dict_row) as cursor:
         cursor.execute("CALL check_event_attendance(%s, NULL, NULL, NULL)", (event,))
+        return cursor.fetchone()
+        
+def getReservationOutcome(message_id):
+    with conn_info.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            """
+            SELECT status, rejection_reason, requested_at FROM registration
+            WHERE redis_message_id = %s
+            """,
+            (message_id,),
+        )
         return cursor.fetchone()

@@ -1,0 +1,17 @@
+Decision Log
+
+Decision 1: Using asynchronous processing
+
+Alternative: Synchronous processing, websockets, polling
+
+Reasonings: I chose the asynchronous processing due to how the user needs to know if a reservation has been accepted
+without requiring the API to wait on the processor to finish. If I can have the user send a request and get approval that it was sent
+rather then waiting on the system to feed the data back to the API.
+
+Decision 2:Using Flask
+
+Alternative: FastAPI
+
+Reasonings: Due to how this assignment is relatively smaller and does not require a large application, I chose flask due to
+its lightweightness. I am able to use whatever functionality I need and not impose such a large architecture. Flask also 
+works very well with the type of application I am using with the front-end HTML/JS implementation without additional configs.

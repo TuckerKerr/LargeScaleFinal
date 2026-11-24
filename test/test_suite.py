@@ -181,3 +181,5 @@ def test_mass_register():
         pytest.fail(f"Expected {capacity} registration, found {after['registered_count']}")
 
     assert after["registered_count"] == 16
+
+# TEST AN INVALID INPUT (USERNAME OR EVENT)

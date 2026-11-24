@@ -11,18 +11,27 @@ def insertData():
         results = r.xread(streams={"events:raw": last_id}, count=10, block=10000,)
 
         for stream_name, events in results:
-            for event_id, user in events:
+            for message_id, user in events:
                 username = user["username"]
                 event = user["event"]
+                requested_at = user.get("requested_at")
                 try:
-                    registration = lib.reserveEvent(username, event)
-
-                    if registration == "Event at capacity":
+                    outcome = lib.reserveEvent(username, event, requested_at, message_id)
+                    status = outcome["status"]
+                    rejection_reason = outcome["rejection_reason"]
+                    if rejection_reason == "event_full":
                         print(f"User: {username} cant register for {event} due to capacity")
 
-                    last_id = event_id
+                    print(
+                        f"request_id={message_id} requested_at={requested_at} "
+                        f"status={status} rejection_reason={rejection_reason}"
+                    )
+                    last_id = message_id
                 except Exception as error:
-                    print(f"Error processing {event_id}: {error}")
+                    print(
+                        f"Error processing {message_id}: {error} "
+                        f"requested_at={requested_at} status=unavailable"
+                    )
                     raise
     return last_id, True
 
