@@ -21,7 +21,8 @@ def index():
 @app.route("/api/events", methods=["GET"])
 def get_events():
     try:
-        events = lib.getEvents()
+        username = request.args.get("username")
+        events = lib.getEventsForAttendee(username) if username else lib.getEvents()
 
         return jsonify(events), 200
 
@@ -110,6 +111,7 @@ def get_reservation(request_id):
     try:
         outcome = lib.getReservationOutcome(request_id)
         if outcome is not None:
+            #IF THE REQUEST WAS CONFIRMED, REMOVE IT
             requested_at = outcome["requested_at"]
             return jsonify({
                 "requestId": request_id,

@@ -1,11 +1,13 @@
 import unittest
 import pytest
+from psycopg import errors
 from unittest.mock import patch
 from hypothesis import given, settings, Verbosity, example
 import hypothesis.strategies as st
 from proj_library import collector_lib
 import time
 from concurrent.futures import ThreadPoolExecutor
+from proj_library import db_lib
 
 
 """
@@ -74,12 +76,12 @@ def test_get_single_event():
     ]
 
     with patch(
-        "proj_library.collector_lib.lib.getEvents",
+        "proj_library.collector_lib.lib.getSingleEvent",
         return_value=expected
     ):
         result = collector_lib.getSingleEvent(2)
 
-    assert [result] == expected
+    assert result == expected
 
 def test_users_register():
     # Get attendance before registering
@@ -182,4 +184,28 @@ def test_mass_register():
 
     assert after["registered_count"] == 16
 
-# TEST AN INVALID INPUT (USERNAME OR EVENT)
+# TEST AN INVALID INPUT (USERNAME AND EVENT)
+# RUN A TEST TO CHECK MORE THAN CAPACITY REQUESTS RUNNING AT ONCE
+def test_false_event():
+    event_id = 8
+
+    try:
+        with pytest.raises(
+            errors.RaiseException,
+            match=rf"^Event ID {event_id} does not exist.*"
+        ):
+            collector_lib.getSingleEvent(event_id)
+    finally:
+        db_lib.conn_info.rollback()
+
+
+def test_false_user():
+    username = "Tucker Kerr"
+    event_id = 1
+    
+    response = collector_lib.handleRequests({
+        "username": username,
+        "event": event_id
+    })
+
+    assert response == "No User Exists"

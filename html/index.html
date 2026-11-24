@@ -305,9 +305,9 @@
       // Use an empty API_BASE when Flask serves this page from the same origin.
       // If served separately, set this to the Flask origin and configure CORS on Flask.
       const API_BASE = "";
+      const ATTENDEE_NAME = "Avery Brooks";
       const eventsElement = document.getElementById("events");
       const pageStatus = document.getElementById("page-status");
-      const usernameInput = document.getElementById("username");
       const refreshButton = document.getElementById("refresh");
       const campusButtons = document.querySelectorAll(".filter-button");
       const pendingRequests = new Map();
@@ -349,7 +349,7 @@
       );
 
       function createEventCard(event) {
-        const id = event.id ?? event.event_id;
+        const id = event.event_id;
         const capacity = Math.max(0, Number(event.capacity) || 0);
         const reserved = Math.max(
           0,
@@ -359,9 +359,11 @@
         const percent = capacity
           ? Math.min(100, (reserved / capacity) * 100)
           : 0;
+        const alreadyRegistered = event.already_registered === true;
         const pending = pendingRequests.has(String(id));
         const card = document.createElement("article");
         card.className = "event";
+        card.id = id;
         const title = document.createElement("h2");
         title.textContent = event.name ?? event.event_name ?? "Untitled event";
         const campus = document.createElement("div");
@@ -393,25 +395,23 @@
         const button = document.createElement("button");
         button.className = "primary";
         button.type = "button";
-        button.textContent = full
-          ? "Event Full"
-          : pending
-            ? "Request Pending"
-            : "Register";
-        button.disabled = full || pending || id == null;
+        button.textContent = alreadyRegistered
+          ? "Already Registered"
+          : full
+            ? "Event Full"
+            : pending
+              ? "Request Pending"
+              : "Register";
+        button.disabled = alreadyRegistered || full || pending || id == null;
         const notice = document.createElement("div");
         notice.className = "notice";
         notice.setAttribute("role", "status");
-        if (pending)
+        if (alreadyRegistered) {
+          notice.textContent = `${ATTENDEE_NAME} already has a confirmed seat.`;
+        } else if (pending) {
           notice.textContent = "Request queued. Seat not yet confirmed.";
+        }
         button.addEventListener("click", async () => {
-          const username = usernameInput.value.trim();
-          if (!username) {
-            notice.className = "notice error";
-            notice.textContent = "Enter your student name before registering.";
-            usernameInput.focus();
-            return;
-          }
           button.disabled = true;
           button.textContent = "Submitting…";
           notice.className = "notice";
@@ -421,7 +421,7 @@
               method: "POST",
               headers: { "Content-Type": "application/json" },
               credentials: "include",
-              body: JSON.stringify({ username: "Avery Brooks", eventId: id }),
+              body: JSON.stringify({ username: ATTENDEE_NAME, eventId: id }),
             });
             const result = await response.json().catch(() => ({}));
             if (
@@ -444,6 +444,7 @@
               pendingRequests.set(String(id), result.requestId ?? "queued");
               button.textContent = "Request Pending";
               notice.textContent = "Request queued. Seat not yet confirmed.";
+              window.setTimeout(loadEvents, 2000);
             }
           } catch (error) {
             notice.className = "notice error";
@@ -461,8 +462,10 @@
         refreshButton.disabled = true;
         pageStatus.textContent = "Loading events…";
         try {
-          const response = await fetch(`${API_BASE}/api/events`, {
+          const query = new URLSearchParams({ username: ATTENDEE_NAME });
+          const response = await fetch(`${API_BASE}/api/events?${query}`, {
             credentials: "include",
+            cache: "no-store",
           });
           if (!response.ok) throw new Error(`HTTP ${response.status}`);
           const data = await response.json();

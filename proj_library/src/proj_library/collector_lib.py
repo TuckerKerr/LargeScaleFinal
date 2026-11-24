@@ -9,6 +9,9 @@ def getEvents():
     #GET THE EVENTS AND THEIR CURRENT CAPACITIES
     return lib.getEvents()
 
+def getEventsForAttendee(username):
+    return lib.getEventsForAttendee(username)
+
 def getSingleEvent(event):
     #GET THE EVENTS AND THEIR CURRENT CAPACITIES
     return lib.getSingleEvent(event)
@@ -21,6 +24,11 @@ def handleRequests(userEvent):
     requested_at = userEvent.get("requested_at") or datetime.now(timezone.utc).isoformat()
     unique_key = f"{event}:{username}"
 
+    exists = lib.getUser(username)
+
+    if exists == "No User Exists":
+        return exists
+    
     added = stream.sadd("registrations:queued", unique_key)
 
     #ADD FUNCTIONALITY TO DEAL WITH IF THE DATABASE WAS NOT REACHED
@@ -50,3 +58,7 @@ def getQueuedRequest(message_id):
     stream = redis.Redis(host="localhost", port=6379, decode_responses=True)
     entries = stream.xrange("events:raw", min=message_id, max=message_id)
     return entries[0][1] if entries else None
+
+def removeRegistration(message_id):
+    #SETTING ORIGINS FOR REMOVING REGISTRATION REQUESTS
+    return

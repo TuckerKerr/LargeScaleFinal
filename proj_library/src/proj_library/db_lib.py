@@ -174,7 +174,7 @@ def insertUsers():
     return
 
 def reserveEvent(username, event, requested_at=None, message_id=None):
-    with conn_info.cursor() as cursor:
+    with conn_info.transaction(), conn_info.cursor() as cursor:
 
         cursor.execute("""
             SELECT event_id FROM events WHERE event_id = %s FOR UPDATE
@@ -224,13 +224,31 @@ def reserveEvent(username, event, requested_at=None, message_id=None):
         cursor.execute("""
             CALL save_registration(%s, %s, %s, %s, %s, %s)
         """, (event, username, requested_at, status, rejection_reason, message_id))
-        commitQueries()
         return {"status": status, "rejection_reason": rejection_reason}
 
 def getEvents():
     with conn_info.cursor(row_factory=dict_row) as cursor:
         cursor.execute("SELECT * FROM check_attendance()")
         return cursor.fetchall()
+
+def getEventsForAttendee(username):
+    with conn_info.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            """
+            SELECT e.*, EXISTS (
+                SELECT 1
+                FROM registration AS r
+                WHERE r.event_id = e.event_id
+                  AND r.username = %s
+                  AND r.status = 'confirmed'
+            ) AS already_registered
+            FROM check_attendance() AS e
+            ORDER BY e.event_id
+            """,
+            (username,),
+        )
+        return cursor.fetchall()
+
 
 def getSingleEvent(event):
     with conn_info.cursor(row_factory=dict_row) as cursor:
@@ -247,3 +265,17 @@ def getReservationOutcome(message_id):
             (message_id,),
         )
         return cursor.fetchone()
+
+def getUser(username):
+    with conn_info.cursor(row_factory=dict_row) as cursor:
+        cursor.execute(
+            """
+            SELECT user_id FROM users WHERE name = %s
+            """,
+            (username,),
+        )
+        response = cursor.fetchone()
+        if response is None:
+            return "No User Exists"
+        else:   
+            return response
